@@ -1,0 +1,156 @@
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+}
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+<uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <TextView
+        android:text="My Media Player"
+        android:textSize="20sp"
+        android:layout_gravity="center"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_marginTop="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+</LinearLayout>
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:padding="10dp"
+    android:orientation="horizontal"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/tvSongName"
+        android:textSize="16sp"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnPlay"
+        android:text="Play"
+        android:layout_width="wrap_content"
+        android:
+ayout_height="wrap_content"/>
+</LinearLayout>
+data class Song(
+    val title: String,
+    val path: String
+)
+import android.media.MediaPlayer
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.example.mediaplayer.databinding.ItemSongBinding
+
+class SongAdapter(private val songs: List<Song>) : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
+
+    private var mediaPlayer: MediaPlayer? = null
+
+    inner class SongViewHolder(val binding: ItemSongBinding) : RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SongViewHolder {
+        val binding = ItemSongBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return SongViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: SongViewHolder, position: Int) {
+        val song = songs[position]
+        holder.binding.tvSongName.text = song.title
+
+        holder.binding.btnPlay.setOnClickListener {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(song.path)
+                prepare()
+                start()
+            }
+        }
+    }
+
+    override fun getItemCount(): Int = songs.size
+}
+import android.Manifest
+import android.content.pm.PackageManager
+import android.database.Cursor
+import android.os.Build
+import android.os.Bundle
+import android.provider.MediaStore
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.mediaplayer.databinding.ActivityMainBinding
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private val songList = mutableListOf<Song>()
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) loadSongs()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
+
+        requestPermission()
+    }
+
+    private fun requestPermission() {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            Manifest.permission.READ_MEDIA_AUDIO
+        else
+            Manifest.permission.READ_EXTERNAL_STORAGE
+
+        if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+            permissionLauncher.launch(permission)
+        } else {
+            loadSongs()
+        }
+    }
+
+    private fun loadSongs() {
+        val cursor: Cursor? = contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.DATA),
+            null, null, null
+        )
+
+        cursor?.use {
+            while (it.moveToNext()) {
+                val title = it.getString(0)
+                val path = it.getString(1)
+                songList.add(Song(title, path))
+            }
+        }
+
+        binding.recyclerView.adapter = SongAdapter(songList)
+    }
+}
+android {
+    ...
+    buildFeatures {
+        viewBinding true
+    }
+}
+
