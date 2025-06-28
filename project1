@@ -1,0 +1,231 @@
+dependencies {
+    implementation "androidx.core:core-ktx:1.12.0"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "com.google.android.material:material:1.11.0"
+    implementation "androidx.recyclerview:recyclerview:1.4.0"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.0"
+    implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.8.0"
+    implementation "androidx.room:room-runtime:2.6.1"
+    kapt "androidx.room:room-compiler:2.6.1"
+}
+package com.expensetracker.data
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "expenses")
+data class Expense(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val title: String,
+    val amount: Double
+)
+package com.expensetracker.data
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "expenses")
+data class Expense(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val title: String,
+    val amount: Double
+)
+package com.expensetracker.data
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(entities = [Expense::class], version = 1)
+abstract class ExpenseDatabase : RoomDatabase() {
+
+    abstract fun expenseDao(): ExpenseDao
+
+    companion object {
+        @Volatile private var INSTANCE: ExpenseDatabase? = null
+
+        fun getDatabase(context: Context): ExpenseDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    ExpenseDatabase::class.java,
+                    "expense_db"
+                ).build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
+package com.expensetracker.repository
+
+import com.expensetracker.data.Expense
+import com.expensetracker.data.ExpenseDao
+
+class ExpenseRepository(private val dao: ExpenseDao) {
+
+    val allExpenses = dao.getAllExpenses()
+
+    suspend fun insert(expense: Expense) {
+        dao.insert(expense)
+    }
+
+    suspend fun delete(expense: Expense) {
+        dao.delete(expense)
+    }
+}
+package com.expensetracker.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.expensetracker.data.Expense
+import com.expensetracker.data.ExpenseDatabase
+import com.expensetracker.repository.ExpenseRepository
+import kotlinx.coroutines.launch
+
+class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository: ExpenseRepository
+    val allExpenses by lazy { repository.allExpenses }
+
+    init {
+        val dao = ExpenseDatabase.getDatabase(application).expenseDao()
+        repository = ExpenseRepository(dao)
+    }
+
+    fun addExpense(expense: Expense) = viewModelScope.launch {
+        repository.insert(expense)
+    }
+
+    fun deleteExpense(expense: Expense) = viewModelScope.launch {
+        repository.delete(expense)
+    }
+}
+package com.expensetracker
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.expensetracker.data.Expense
+import com.expensetracker.databinding.ItemExpenseBinding
+
+class ExpenseAdapter(private val expenses: List<Expense>) : RecyclerView.Adapter<ExpenseAdapter.ExpenseViewHolder>() {
+
+    inner class ExpenseViewHolder(val binding: ItemExpenseBinding) : RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ExpenseViewHolder {
+        val binding = ItemExpenseBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return ExpenseViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
+        val expense = expenses[position]
+        holder.binding.apply {
+            tvTitle.text = expense.title
+            tvAmount.text = "₹${expense.amount}"
+        }
+    }
+
+    override fun getItemCount(): Int = expenses.size
+}
+package com.expensetracker
+
+import androidx.appcompat.app.AppCompatActivity
+import android.os.Bundle
+import androidx.activity.viewModels
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.expensetracker.data.Expense
+import com.expensetracker.databinding.ActivityMainBinding
+import com.expensetracker.viewmodel.ExpenseViewModel
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private val viewModel: ExpenseViewModel by viewModels()
+    private val expenses = mutableListOf<Expense>()
+    private lateinit var adapter: ExpenseAdapter
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        adapter = ExpenseAdapter(expenses)
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        binding.recyclerView.adapter = adapter
+
+        viewModel.allExpenses.observe(this) { list ->
+            expenses.clear()
+            expenses.addAll(list)
+            adapter.notifyDataSetChanged()
+        }
+
+        binding.btnAdd.setOnClickListener {
+            val title = binding.etTitle.text.toString()
+            val amount = binding.etAmount.text.toString().toDoubleOrNull() ?: 0.0
+
+            if (title.isNotEmpty() && amount > 0) {
+                val expense = Expense(title = title, amount = amount)
+                viewModel.addExpense(expense)
+                binding.etTitle.text.clear()
+                binding.etAmount.text.clear()
+            }
+        }
+    }
+}
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <EditText
+        android:id="@+id/etTitle"
+        android:hint="Expense Title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <EditText
+        android:id="@+id/etAmount"
+        android:hint="Amount"
+        android:inputType="numberDecimal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/btnAdd"
+        android:text="Add Expense"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_marginTop="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+</LinearLayout>
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="horizontal"
+    android:padding="8dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:textStyle="bold"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"/>
+
+    <TextView
+        android:id="@+id/tvAmount"
+        android:textColor="@android:color/holo_green_dark"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
+</LinearLayout>
+
